@@ -1,0 +1,92 @@
+//#include <pitches.h> // Remove comments if you plan to use
+
+// Variables that don't change
+int const selPin = 4; // pin used to connect the select button
+int const modPin = 3; // pin used to connect the mode button
+int const redLED = 2;
+int const blueLED = 9;
+int const spkr = 1;
+
+// Variables that do change
+int modState; // Variable used to store the state of the mode button (High or Low)
+int selState; // Variable used to store the state of the select button (High or Low)
+int mode;     // Variable to store the current mode
+
+// Song Example 1
+int melody[] = {262, 196, 196, 220, 196, 0, 247, 262};
+int duration[] = {250, 125, 125, 250, 250, 250, 250, 250};
+
+void setup() 
+{
+  pinMode(selPin, INPUT);  // Select button
+  pinMode(modPin, INPUT);  // Mode button
+  pinMode(redLED, OUTPUT); // Red LED set as output
+  pinMode(blueLED, OUTPUT);// Blue LED set as output
+  pinMode(spkr, OUTPUT);   // Speaker set as output
+  Serial.begin(9600);      // Enable serial monitor for troubleshooting
+}
+
+void loop() 
+{
+  modState = digitalRead(modPin); // Store the state of the mode button
+  selState = digitalRead(selPin); // Store the state of the select button
+  Serial.println(mode);           // Print current mode in serial monitor
+  
+  if (modState == HIGH)
+  { 
+    mode = mode + 1; // Increase mode by 1 on button press
+    delay(150);      // Delay to "debounce" the button
+    
+    if (mode == 1) // Play different songs based on the current mode
+    {
+      song1();
+    }
+    if (mode == 2) 
+    {
+      song2();        
+    }
+    if (mode == 3) 
+    {
+      song3();
+    }
+    if (mode == 4) 
+    {
+      mode = 0;
+      off();
+    }
+  }
+}
+
+void song1() 
+{
+  digitalWrite(redLED, HIGH); // Turn on red LED
+  digitalWrite(blueLED, LOW); // Turn off blue LED
+  tone(spkr, 400);             // Play tone with speaker
+  delay(1000);
+}
+
+void song2() 
+{
+  digitalWrite(redLED, LOW);  // Turn off red LED
+  digitalWrite(blueLED, HIGH); // Turn on blue LED
+  tone(spkr, 600);             // Play tone with speaker
+  delay(1000);
+}
+
+void song3() 
+{
+  digitalWrite(redLED, HIGH);
+  digitalWrite(blueLED, HIGH);
+  for (int thisNote = 0; thisNote < 8; thisNote++) 
+  { // Loop through the notes in the array
+    tone(spkr, melody[thisNote], duration[thisNote]); // Play thisNote for duration
+    delay(50); // Short delay between notes
+  }
+}
+
+void off() 
+{ // Instructions to stop
+  digitalWrite(redLED, LOW);
+  digitalWrite(blueLED, LOW);
+  noTone(spkr);
+}

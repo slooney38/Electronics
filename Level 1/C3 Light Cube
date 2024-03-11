@@ -1,92 +1,107 @@
-//#include <pitches.h> // Remove comments if you plan to use
+/*
+Things to try:
+Easy
+1) Add the LDR for a night mode (ex. lights on when darK) 
+2) Play with fade and dimming (ex. light isn't as bright in a dark room)
+Intermediate
+3) Make a mode that cycles through all colours automatically
+4) Add extra  functionality with a slow click
+Hard
+5) Create a WIFI Web server to remotely toggle LED colours
+*/  
+
 
 // Variables that don't change
-int const selPin = 4; // pin used to connect the select button
-int const modPin = 3; // pin used to connect the mode button
-int const redLED = 2;
-int const blueLED = 9;
-int const spkr = 1;
+int redLED = 3;
+int greenLED = 8;
+int blueLED = 9;
 
-// Variables that do change
-int modState; // Variable used to store the state of the mode button (High or Low)
-int selState; // Variable used to store the state of the select button (High or Low)
-int mode;     // Variable to store the current mode
+int btnPIN = 4;
+int ldrPIN = 1;
 
-// Song Example 1
-int melody[] = {262, 196, 196, 220, 196, 0, 247, 262};
-int duration[] = {250, 125, 125, 250, 250, 250, 250, 250};
 
+//Variables that can change
+int btnSTATE;    //store button state ex. high or low    
+int ldrVAL;      //store the value of LDR ex bright or dark
+int mode;        //store the current mode
+
+// the setup function runs once when you press reset or power the board
 void setup() 
 {
-  pinMode(selPin, INPUT);  // Select button
-  pinMode(modPin, INPUT);  // Mode button
-  pinMode(redLED, OUTPUT); // Red LED set as output
-  pinMode(blueLED, OUTPUT);// Blue LED set as output
-  pinMode(spkr, OUTPUT);   // Speaker set as output
-  Serial.begin(9600);      // Enable serial monitor for troubleshooting
+  pinMode(redLED, OUTPUT);      //Set inputs and outputs for all used pins
+  pinMode(greenLED, OUTPUT);
+  pinMode(blueLED, OUTPUT);
+  
+  pinMode(btnPIN, INPUT);
+  pinMode(ldrPIN, INPUT);
+  Serial.begin(9600);           //Turn on Serial monitor for troubleshooting
 }
 
+// the loop function runs over and over again forever
 void loop() 
 {
-  modState = digitalRead(modPin); // Store the state of the mode button
-  selState = digitalRead(selPin); // Store the state of the select button
-  Serial.println(mode);           // Print current mode in serial monitor
+  btnSTATE = digitalRead(btnPIN);      //Check button press and store
+  ldrVAL = analogRead(ldrPIN);         //Check LDR reading and store
+
   
-  if (modState == HIGH)
-  { 
-    mode = mode + 1; // Increase mode by 1 on button press
-    delay(150);      // Delay to "debounce" the button
+  //Change mode by 1 on button press
+  if (btnSTATE == HIGH)
+  {
+    mode = mode + 1;
+    delay( 150);      //small delay for button debounce
+  }
+  
+  //mode greater than x?  reset to 0
+  if (mode == 4)
+  {
+    mode = 0;
+  }
+  
+  //Off mode    
+  if (mode == 0)
+  {
+    digitalWrite(redLED, LOW);
+    digitalWrite(greenLED, LOW);
+    digitalWrite(blueLED, LOW);
+  }
+  
+  //Red mode
+  if (mode == 1)
+  {
+  	digitalWrite(redLED, HIGH);	// turn on the Red LED
+  	digitalWrite(greenLED, LOW);	// turn off the Green LED
+	digitalWrite(blueLED, LOW);	// turn off the blue LED
+  }
     
-    if (mode == 1) // Play different songs based on the current mode
+  //Green mode  
+  if (mode == 2)
+  {
+  	digitalWrite(redLED, LOW);	// turn off the Red LED
+  	digitalWrite(greenLED, HIGH);	// turn on the green LED
+	digitalWrite(blueLED, LOW);	// turn off the blue LED
+  }
+  
+  //Blue mode  
+  if (mode == 3)
+  {
+  	digitalWrite(redLED, LOW);	// turn off the Red LED
+  	digitalWrite(greenLED, LOW);	// turn off the green LED
+	digitalWrite(blueLED, HIGH);	// turn on the blue LED
+  }
+
+  if(mode == 4)  //When mode = 4 & LDR light value is low, turn on White LED
+  {
+    if(ldrVAL < 2000)
     {
-      song1();
+      digitalWrite(redLED, HIGH);	// turn off the Red LED
+  	  digitalWrite(greenLED, HIGH);	// turn off the green LED
+	  digitalWrite(blueLED, HIGH);	// turn on the blue LED
     }
-    if (mode == 2) 
+    else
     {
-      song2();        
-    }
-    if (mode == 3) 
-    {
-      song3();
-    }
-    if (mode == 4) 
-    {
-      mode = 0;
-      off();
+      digitalWrite(redLED, LOW);	// turn off the Red LED
+  	  digitalWrite(greenLED, LOW);	// turn off the green LED
+	  digitalWrite(blueLED, LOW);	// turn on the blue LED
     }
   }
-}
-
-void song1() 
-{
-  digitalWrite(redLED, HIGH); // Turn on red LED
-  digitalWrite(blueLED, LOW); // Turn off blue LED
-  tone(spkr, 400);             // Play tone with speaker
-  delay(1000);
-}
-
-void song2() 
-{
-  digitalWrite(redLED, LOW);  // Turn off red LED
-  digitalWrite(blueLED, HIGH); // Turn on blue LED
-  tone(spkr, 600);             // Play tone with speaker
-  delay(1000);
-}
-
-void song3() 
-{
-  digitalWrite(redLED, HIGH);
-  digitalWrite(blueLED, HIGH);
-  for (int thisNote = 0; thisNote < 8; thisNote++) 
-  { // Loop through the notes in the array
-    tone(spkr, melody[thisNote], duration[thisNote]); // Play thisNote for duration
-    delay(50); // Short delay between notes
-  }
-}
-
-void off() 
-{ // Instructions to stop
-  digitalWrite(redLED, LOW);
-  digitalWrite(blueLED, LOW);
-  noTone(spkr);
 }

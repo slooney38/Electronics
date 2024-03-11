@@ -60,7 +60,7 @@ void loop()
   //Off mode    
   if (mode == 0)
   {
-    digitalWrite(redLED, LOW);
+    digitalWrite(redLED, HIGH);
     digitalWrite(greenLED, LOW);
     digitalWrite(blueLED, LOW);
   }

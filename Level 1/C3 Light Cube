@@ -12,13 +12,12 @@ Hard
 
 
 // Variables that don't change
-int redLED = 3;
+int redLED = 3;     //variables that store component pins
 int greenLED = 8;
 int blueLED = 9;
 
-int btnPIN = 4;
+int btnPIN = 4;   
 int ldrPIN = 1;
-
 
 //Variables that can change
 int btnSTATE;    //store button state ex. high or low    

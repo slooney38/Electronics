@@ -41,6 +41,7 @@ void loop()
 {
   btnSTATE = digitalRead(btnPIN);      //Check button press and store
   ldrVAL = analogRead(ldrPIN);         //Check LDR reading and store
+  Serial.println(ldrVAL);
 
   
   //Change mode by 1 on button press
@@ -90,7 +91,7 @@ void loop()
 
   if(mode == 4)  //When mode = 4 & LDR light value is low, turn on White LED
   {
-    if(ldrVAL < 2000)
+    if(ldrVAL < 3000)
     {
       digitalWrite(redLED, HIGH);	// turn off the Red LED
   	  digitalWrite(greenLED, HIGH);	// turn off the green LED

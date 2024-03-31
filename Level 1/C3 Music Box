@@ -1,9 +1,12 @@
 /*
-1) This project uses Jason Cox's TinyRTTTL library found at https://github.com/jasonacox/TinyRTTTL
-2) Learn more about RTTTL: https://en.wikipedia.org/wiki/Ring_Tone_Text_Transfer_Language
-3) Build your own custom songbook:
-4) Make your own custom songs: https://corax89.github.io/esp8266Game/soundEditor.html
-5) Program the "SElECT" button to do something cool!
+This project uses Jason Cox's TinyRTTTL library found at https://github.com/jasonacox/TinyRTTTL
+Learn more about RTTTL: https://en.wikipedia.org/wiki/Ring_Tone_Text_Transfer_Language
+
+Challenges (Easy, Medium, Hard):
+1) (E) Build your own custom song bank:
+2) (E) Make your own custom songs: https://corax89.github.io/esp8266Game/soundEditor.html
+3) (M) Program the "SElECT" button to do something cool!
+4) (H) Create a WIFI accessible musical interface to select song and play remotely
 */
 
 #include <TinyRTTTL.h> // Library to decode RTTTL ringtones
@@ -78,8 +81,8 @@ void loop()
 
 void reset() 
 { // Instructions to reset
-  mode = 0;
-  digitalWrite(redLED, LOW);
+  mode = 0;                    //Reset mode back to 0
+  digitalWrite(redLED, LOW);   //Turn off both LEDs & Speaker
   digitalWrite(blueLED, LOW);
   noTone(spkr);
 }

@@ -1,4 +1,11 @@
-//#include <pitches.h> // Remove comments if you plan to use
+/*
+1) This project uses Jason Cox's TinyRTTTL library found at https://github.com/jasonacox/TinyRTTTL
+2) Learn more about RTTTL: https://en.wikipedia.org/wiki/Ring_Tone_Text_Transfer_Language
+3) Build your own custom songbook:
+4) Make your own custom songs: https://corax89.github.io/esp8266Game/soundEditor.html
+5) Program the "SElECT" button to do something cool!
+*/
+
 #include <TinyRTTTL.h> // Library to decode RTTTL ringtones
 
 // Variables that don't change

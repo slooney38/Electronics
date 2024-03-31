@@ -1,20 +1,36 @@
-//#include <pitches.h> // Remove comments if you plan to use
+/*
+This project uses Jason Cox's TinyRTTTL library found at https://github.com/jasonacox/TinyRTTTL
+Learn more about RTTTL: https://en.wikipedia.org/wiki/Ring_Tone_Text_Transfer_Language
+
+Challenges (Easy, Medium, Hard):
+1) (E) Build your own custom song bank:
+2) (E) Make your own custom songs: https://corax89.github.io/esp8266Game/soundEditor.html
+3) (M) Program the "SElECT" button to do something cool!
+4) (H) Create a WIFI accessible musical interface to select song and play remotely
+*/
+
+#include <TinyRTTTL.h> // Library to decode RTTTL ringtones
 
 // Variables that don't change
-int const selPin = 4; // pin used to connect the select button
-int const modPin = 3; // pin used to connect the mode button
-int const redLED = 2;
-int const blueLED = 9;
-int const spkr = 1;
+int const selPin = 4;   // pin used to connect the select button
+int const modPin = 3;   // pin used to connect the mode button
+int const redLED = 2;   // pin used for LED 1
+int const blueLED = 9;  // pin used for LED 2
+int const spkr = 1;     // pin used for Speaker
+int octive = 0;
 
 // Variables that do change
 int modState; // Variable used to store the state of the mode button (High or Low)
 int selState; // Variable used to store the state of the select button (High or Low)
 int mode;     // Variable to store the current mode
 
-// Song Example 1
-int melody[] = {262, 196, 196, 220, 196, 0, 247, 262};
-int duration[] = {250, 125, 125, 250, 250, 250, 250, 250};
+// Initialize TinyRTTTL
+TinyRTTTL rtttl(spkr, octive);
+
+//Song Bank
+char *song1 = "StarWars:d=4,o=5,b=45:32p,32f#,32f#,32f#,8b.,8f#.6,32e6,32d#6,32c#6,8b.6,16f#.6,32e6,32d#6,32c#6,8b.6,16f#.6,32e6,32d#6,32e6,8c#.6,32f#,32f#,32f#,8b.,8f#.6,32e6,32d#6,32c#6,8b.6,16f#.6,32e6,32d#6,32c#6,8b.6,16f#.6,32e6,32d#6,32e6,8c#6";
+char *song2 = "Indiana:d=4,o=5,b=250:e,8p,8f,8g,8p,1c6,8p.,d,8p,8e,1f,p.,g,8p,8a,8b,8p,1f6,p,a,8p,8b,2c6,2d6,2e6,e,8p,8f,8g,8p,1c6,p,d6,8p,8e6,1f.6,g,8p,8g,e.6,8p,d6,8p,8g,e.6,8p,d6,8p,8g,f.6,8p,e6,8p,8d6,2c6";
+char *song3 = "MissionImp:d=16,o=6,b=95:32d,32d#,32d,32d#,32d,32d#,32d,32d#,32d,32d,32d#,32e,32f,32f#,32g,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,g,8p,g,8p,a#,p,c7,p,g,8p,g,8p,f,p,f#,p,a#,g,2d,32p,a#,g,2c#,32p,a#,g,2c,a#5,8c,2p,32p,a#5,g5,2f#,32p,a#5,g5,2f,32p,a#5,g5,2e,d#,8d";
 
 void setup() 
 {
@@ -24,6 +40,7 @@ void setup()
   pinMode(blueLED, OUTPUT);// Blue LED set as output
   pinMode(spkr, OUTPUT);   // Speaker set as output
   Serial.begin(9600);      // Enable serial monitor for troubleshooting
+  rtttl.begin();
 }
 
 void loop() 
@@ -39,54 +56,33 @@ void loop()
     
     if (mode == 1) // Play different songs based on the current mode
     {
-      song1();
+      digitalWrite(redLED, HIGH); // Turn on red LED
+      digitalWrite(blueLED, LOW); // Turn off blue LED
+      rtttl.play(song1);
+      delay(500);
     }
     if (mode == 2) 
     {
-      song2();        
+      digitalWrite(redLED, LOW); // Turn on red LED
+      digitalWrite(blueLED, HIGH); // Turn off blue LED
+      rtttl.play(song2);
+      delay(500);      
     }
     if (mode == 3) 
     {
-      song3();
+      rtttl.play(song3);
     }
     if (mode == 4) 
     {
-      mode = 0;
-      off();
+      reset();
     }
   }
 }
 
-void song1() 
-{
-  digitalWrite(redLED, HIGH); // Turn on red LED
-  digitalWrite(blueLED, LOW); // Turn off blue LED
-  tone(spkr, 400);             // Play tone with speaker
-  delay(1000);
-}
-
-void song2() 
-{
-  digitalWrite(redLED, LOW);  // Turn off red LED
-  digitalWrite(blueLED, HIGH); // Turn on blue LED
-  tone(spkr, 600);             // Play tone with speaker
-  delay(1000);
-}
-
-void song3() 
-{
-  digitalWrite(redLED, HIGH);
-  digitalWrite(blueLED, HIGH);
-  for (int thisNote = 0; thisNote < 8; thisNote++) 
-  { // Loop through the notes in the array
-    tone(spkr, melody[thisNote], duration[thisNote]); // Play thisNote for duration
-    delay(50); // Short delay between notes
-  }
-}
-
-void off() 
-{ // Instructions to stop
-  digitalWrite(redLED, LOW);
+void reset() 
+{ // Instructions to reset
+  mode = 0;                    //Reset mode back to 0
+  digitalWrite(redLED, LOW);   //Turn off both LEDs & Speaker
   digitalWrite(blueLED, LOW);
   noTone(spkr);
 }

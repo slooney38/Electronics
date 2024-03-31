@@ -9,11 +9,11 @@
 #include <TinyRTTTL.h> // Library to decode RTTTL ringtones
 
 // Variables that don't change
-int const selPin = 4; // pin used to connect the select button
-int const modPin = 3; // pin used to connect the mode button
-int const redLED = 2;
-int const blueLED = 9;
-int const spkr = 1;
+int const selPin = 4;   // pin used to connect the select button
+int const modPin = 3;   // pin used to connect the mode button
+int const redLED = 2;   // pin used for LED 1
+int const blueLED = 9;  // pin used for LED 2
+int const spkr = 1;     // pin used for Speaker
 int octive = 0;
 
 // Variables that do change

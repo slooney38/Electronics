@@ -56,14 +56,14 @@ void loop()
       digitalWrite(redLED, HIGH); // Turn on red LED
       digitalWrite(blueLED, LOW); // Turn off blue LED
       rtttl.play(song1);
-      delay(1000);
+      delay(500);
     }
     if (mode == 2) 
     {
       digitalWrite(redLED, LOW); // Turn on red LED
       digitalWrite(blueLED, HIGH); // Turn off blue LED
       rtttl.play(song2);
-      delay(1000);      
+      delay(500);      
     }
     if (mode == 3) 
     {

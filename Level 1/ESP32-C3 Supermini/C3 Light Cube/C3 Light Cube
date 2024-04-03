@@ -1,13 +1,10 @@
 /*
-Things to try:
-Easy
-1) Add the LDR for a night mode (ex. lights on when darK) 
-2) Play with fade and dimming (ex. light isn't as bright in a dark room)
-Medium
-3) Make a mode that cycles through all colours automatically
-4) Add extra  functionality with a slow click
-Hard
-5) Create a WIFI Web server to remotely toggle LED colours
+Things to try (Easy, Medium, Hard:
+1) (E) Add the LDR for a night mode (ex. lights on when darK) 
+2) (E) Play with fade and dimming (ex. light isn't as bright in a dark room)
+3) (M) Make a mode that cycles through all colours automatically
+4) (M) Add extra  functionality with a slow click
+5) (H) Create a WIFI Web server to remotely toggle LED colours
 */  
 
 

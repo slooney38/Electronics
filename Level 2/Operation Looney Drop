@@ -1,0 +1,110 @@
+/*
+Things to try (Easy, Medium, Hard):
+1) (E)
+2) 
+3) (M) 
+4) (H) 
+*/
+
+//Libraries
+#include <ESP32Servo.h>
+
+// ------------------------
+// Variables that don't change
+// ------------------------
+int swPin = 3;
+int btnPin = 7;
+int drivePin = 5;
+int dropPin = 6;
+
+int stop = 90;
+int fullFWD = 180;
+int fullREV = 0;
+
+//Create servo objects
+Servo driveServo;
+Servo dropServo;
+
+// ------------------------
+// Variables that can change
+// ------------------------
+int btnState;           //current button state
+int lastBtnState = LOW; //previous button state
+
+int toggle = 0;         //0 = standby, 1 = run
+
+//Debounce variables
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50;
+
+
+void setup() 
+{
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(swPin, INPUT);
+  pinMode(btnPin, INPUT);
+
+  //Servo setup for ESP32
+  driveServo.setPeriodHertz(50);
+  driveServo.attach(drivePin, 500, 2400);
+
+  dropServo.setPeriodHertz(50);
+  dropServo.attach(dropPin, 500, 2400);
+
+  Serial.begin(9600);
+}
+
+
+// the loop function runs over and over again forever
+void loop() 
+{
+  btnState = digitalRead(btnPin);   //read button directly into btnState
+
+  //If button changed, reset debounce timer
+  if (btnState != lastBtnState)
+  {
+    lastDebounceTime = millis();
+  }
+
+  //If stable long enough, accept the change
+  if ((millis() - lastDebounceTime) > debounceDelay)
+  {
+    //Detect a press (LOW → HIGH transition)
+    if (btnState == HIGH && lastBtnState == LOW)
+    {
+      toggle = !toggle;   //flip between run and standby
+    }
+  }
+
+  lastBtnState = btnState;   //save for next loop
+
+
+  // ------------------------
+  // Mode selection
+  // ------------------------
+
+  if (toggle == 1)
+  {
+    run();
+  }
+  else
+  {
+    standby();
+  }
+}
+
+
+//Run behaviour
+void run()
+{
+  Serial.println("Run Mode");
+  driveServo.write(fullFWD);
+}
+
+
+//Standby behaviour
+void standby()
+{
+  Serial.println("Standby Mode");
+  driveServo.write(stop);
+}

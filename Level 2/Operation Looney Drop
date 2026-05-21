@@ -99,6 +99,10 @@ void run()
 {
   Serial.println("Run Mode");
   driveServo.write(FWD);
+  if (sensorState == HIGH)
+  {
+    drop(); // If sensor detects reflective tape, execute drop function
+  }
 }
 
 // Standby behaviour

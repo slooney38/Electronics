@@ -1,51 +1,51 @@
 /*
 Things to try (Easy, Medium, Hard):
-1) (E) Onboard LED indication for Run and Standby Modes
+1) (E) Use Onboard LED to indicate Run and Standby Modes
 2) (E) Create "Drop" function using the IR Sensor and drop servo
-3) (E) 
-4) (M) 
+3) (E)
+4) (M)
 5) (H) Button click to select Standby, Autonomous or Remote Control Mode
 */
 
 // ------------------------
-//Libraries
+// Libraries
 // ------------------------
 #include <ESP32Servo.h>
 
 // ------------------------
 // Variables that don't change
 // ------------------------
-int sensorPin = 3;
-int btnPin = 7;
-int drivePin = 5;
-int dropPin = 6;
+int sensorPin = 15;
+int btnPin = 18;
+int drivePin = 19;
+int dropPin = 21;
 
 int stop = 90;
 int FWD = 180;
 int REV = 0;
 
-Servo driveServo; //Create servo objects
+Servo driveServo; // Create servo objects
 Servo dropServo;
 
 // ------------------------
 // Variables that can change
 // ------------------------
-int btnState;           //current button state
-int lastBtnState = LOW; //previous button state
+int btnState;           // current button state
+int sensorState;        // current sensor state
+int lastBtnState = LOW; // previous button state
 
-int toggle = 0;         //0 = standby, 1 = run
+int toggle = 0; // 0 = standby, 1 = run
 
-unsigned long lastDebounceTime = 0; //Debounce variables
+unsigned long lastDebounceTime = 0; // Debounce variables
 unsigned long debounceDelay = 50;
-
 
 void setup()
 {
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT); // Try pin 4 if built-in LED doesn't work
   pinMode(sensorPin, INPUT);
   pinMode(btnPin, INPUT);
 
-  //Servo setup for ESP32
+  // Servo setup for ESP32
   driveServo.setPeriodHertz(50);
   driveServo.attach(drivePin, 500, 2400);
 
@@ -55,30 +55,29 @@ void setup()
   Serial.begin(9600);
 }
 
-
 // the loop function runs over and over again forever
 void loop()
 {
-  btnState = digitalRead(btnPin);   //read button directly into btnState
+  btnState = digitalRead(btnPin);       // read button directly into btnState
+  sensorState = digitalRead(sensorPin); // read sensor state
 
-  //If button changed, reset debounce timer
+  // If button changed, reset debounce timer
   if (btnState != lastBtnState)
   {
     lastDebounceTime = millis();
   }
 
-  //If stable long enough, accept the change
+  // If stable long enough, accept the change
   if ((millis() - lastDebounceTime) > debounceDelay)
   {
-    //Detect a press (LOW → HIGH transition)
+    // Detect a press (LOW → HIGH transition)
     if (btnState == HIGH && lastBtnState == LOW)
     {
-      toggle = !toggle;   //flip between run and standby
+      toggle = !toggle; // flip between run and standby
     }
   }
 
-  lastBtnState = btnState;   //save for next loop
-
+  lastBtnState = btnState; // save for next loop
 
   // ------------------------
   // Mode selection
@@ -94,18 +93,31 @@ void loop()
   }
 }
 
-
-//Run behaviour
+// Run behaviour
 void run()
 {
+  if (sensorState == HIGH)
+  {
+    drop();
+  }
+
   Serial.println("Run Mode");
   driveServo.write(FWD);
 }
 
-
-//Standby behaviour
+// Standby behaviour
 void standby()
 {
   Serial.println("Standby Mode");
   driveServo.write(stop);
+}
+
+void drop()
+{
+  dropServo.write(90);  // Start drop servo in middle position
+  delay(1000);          // Wait for 1 second
+  dropServo.write(180); // Move to drop position
+  delay(1000);          // Wait for 1 second
+  dropServo.write(90);  // Return to middle position
+  delay(1000);          // Wait for 1 second
 }

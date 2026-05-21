@@ -1,8 +1,9 @@
 /*
 Things to try (Easy, Medium, Hard):
-1) (E)
+1) (E) Onboard LED indication for Run and Standby Modes
+2) (E) Actuated the Drop servo when the IR Sensor detects a reflective surface
 2) (M) 
-3) (H) 
+3) (H) Create a bluetooth or WIFI Remote control mode (Drive + Drop servo control)
 */
 
 //Libraries

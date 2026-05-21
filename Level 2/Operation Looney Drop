@@ -1,9 +1,8 @@
 /*
 Things to try (Easy, Medium, Hard):
 1) (E)
-2) 
-3) (M) 
-4) (H) 
+2) (M) 
+3) (H) 
 */
 
 //Libraries
@@ -18,8 +17,8 @@ int drivePin = 5;
 int dropPin = 6;
 
 int stop = 90;
-int fullFWD = 180;
-int fullREV = 0;
+int FWD = 180;
+int REV = 0;
 
 //Create servo objects
 Servo driveServo;
@@ -98,7 +97,7 @@ void loop()
 void run()
 {
   Serial.println("Run Mode");
-  driveServo.write(fullFWD);
+  driveServo.write(FWD);
 }
 
 

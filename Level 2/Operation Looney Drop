@@ -7,7 +7,9 @@ Things to try (Easy, Medium, Hard):
 5) (H) Button click to select Standby, Autonomous or Remote Control Mode
 */
 
+// ------------------------
 //Libraries
+// ------------------------
 #include <ESP32Servo.h>
 
 // ------------------------
@@ -22,8 +24,7 @@ int stop = 90;
 int FWD = 180;
 int REV = 0;
 
-//Create servo objects
-Servo driveServo;
+Servo driveServo; //Create servo objects
 Servo dropServo;
 
 // ------------------------
@@ -34,12 +35,11 @@ int lastBtnState = LOW; //previous button state
 
 int toggle = 0;         //0 = standby, 1 = run
 
-//Debounce variables
-unsigned long lastDebounceTime = 0;
+unsigned long lastDebounceTime = 0; //Debounce variables
 unsigned long debounceDelay = 50;
 
 
-void setup() 
+void setup()
 {
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(sensorPin, INPUT);
@@ -57,7 +57,7 @@ void setup()
 
 
 // the loop function runs over and over again forever
-void loop() 
+void loop()
 {
   btnState = digitalRead(btnPin);   //read button directly into btnState
 

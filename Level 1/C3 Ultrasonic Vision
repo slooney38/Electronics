@@ -1,0 +1,72 @@
+/*
+  Ultrasonic Sensor HC-SR04 with LED Blink (non-blocking)
+  Original reference: HowToMechatronics.com
+
+  Challenges (Easy, Medium, Hard):
+  1) (E) Link the distance sensor to the blink rate of the LED
+  2) (E) Link the distance sensor to the frequency of the speaker
+  3) (M) Modify the distance sensor to be Non-Blocking (millis instead of delay)
+  4) (M) Add smoothing/averaging to reduce noise and outlying readings
+  4) (H) User Friendly: Logical usage, Comfortable sounds/Tones, minimal explaination required for end user
+*/
+
+// Constants (do not change)
+const int trigPin = 1;    // Ultrasonic trigger pin
+const int echoPin = 2;    // Ultrasonic echo pin
+const int ledPin  = 10;   // LED pin
+const int spkrPin = 5;    // Speaker pin
+
+// Variables (can change)
+long duration;                     // Echo time (microseconds)
+int distance;                      // Distance (cm)
+int ledState = LOW;                // Tracks LED ON/OFF state
+unsigned long previousMillis = 0;  // Last LED toggle timestamp
+long interval;                     // Blink speed
+
+void setup()
+{
+    pinMode(spkrPin, OUTPUT);    // Speaker set as output
+    pinMode(ledPin, OUTPUT);     // LED output
+    pinMode(trigPin, OUTPUT);    // Sensor trigger output
+    pinMode(echoPin, INPUT);     // Sensor echo input
+    Serial.begin(9600);          // Serial monitor enabled
+}
+
+void loop()
+{
+    // ----- Ultrasonic Trigger Pulse -----
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+
+    // ----- Read Echo and Compute Distance -----
+    duration = pulseIn(echoPin, HIGH);   // Time of echo return
+    distance = duration * 0.034 / 2;     // Convert to centimeters
+
+    Serial.print("Distance: ");
+    Serial.println(distance);
+
+    // ----- LED Blink (based on blink without delay example) -----
+    unsigned long currentMillis = millis();
+
+    if (currentMillis - previousMillis >= interval)
+    {
+        // Save timestamp of last blink
+        previousMillis = currentMillis;
+
+        // Toggle LED state
+        if (ledState == LOW)
+        {
+            ledState = HIGH;
+        }
+        else
+        {
+            ledState = LOW;
+        }
+
+        // Apply LED state
+        digitalWrite(ledPin, ledState);
+    }
+}

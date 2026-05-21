@@ -1,8 +1,8 @@
 /*
 Things to try (Easy, Medium, Hard):
 1) (E) Use Onboard LED to indicate Run and Standby Modes
-2) (E) Create "Drop" function using the IR Sensor and drop servo
-3) (E) Test
+2) (E) Add instructions to the "Drop" function
+3) (M) Programmable drop sequence (ex. drop 2nd and 4th then return for 3rd and 1st)
 4) (M)
 5) (H) Button click to select Standby, Autonomous or Remote Control Mode
 */
@@ -15,10 +15,11 @@ Things to try (Easy, Medium, Hard):
 // ------------------------
 // Variables that don't change
 // ------------------------
-int sensorPin = 15;
+int sensorPin = 15; // These pins may be different for your setup - check the pinout for your board
 int btnPin = 18;
 int drivePin = 19;
 int dropPin = 21;
+int ledPIN = 2;
 
 int stop = 90;
 int FWD = 180;
@@ -41,7 +42,7 @@ unsigned long debounceDelay = 50;
 
 void setup()
 {
-  pinMode(LED_BUILTIN, OUTPUT); // Try pin 4 if built-in LED doesn't work
+  pinMode(ledPIN, OUTPUT);
   pinMode(sensorPin, INPUT);
   pinMode(btnPin, INPUT);
 
@@ -96,13 +97,12 @@ void loop()
 // Run behaviour
 void run()
 {
-  if (sensorState == HIGH)
-  {
-    drop();
-  }
-
   Serial.println("Run Mode");
   driveServo.write(FWD);
+  if (sensorState == HIGH)
+  {
+    drop(); // If sensor detects reflective tape, execute drop function
+  }
 }
 
 // Standby behaviour
@@ -114,10 +114,5 @@ void standby()
 
 void drop()
 {
-  dropServo.write(90);  // Start drop servo in middle position
-  delay(1000);          // Wait for 1 second
-  dropServo.write(180); // Move to drop position
-  delay(1000);          // Wait for 1 second
-  dropServo.write(90);  // Return to middle position
-  delay(1000);          // Wait for 1 second
+  dropServo.write(90); // Start drop servo in middle position
 }

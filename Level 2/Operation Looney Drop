@@ -13,7 +13,7 @@ Things to try (Easy, Medium, Hard):
 // ------------------------
 // Variables that don't change
 // ------------------------
-int swPin = 3;
+int sensorPin = 3;
 int btnPin = 7;
 int drivePin = 5;
 int dropPin = 6;
@@ -42,7 +42,7 @@ unsigned long debounceDelay = 50;
 void setup() 
 {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(swPin, INPUT);
+  pinMode(sensorPin, INPUT);
   pinMode(btnPin, INPUT);
 
   //Servo setup for ESP32

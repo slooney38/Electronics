@@ -1,0 +1,75 @@
+/*
+WS2812B 4x4 LED Matrix
+
+IMPORTANT:
+- Keep brightness LOW for safety
+
+KEY IDEA:
+We control LEDs using (x, y) coordinates
+
+(0,0) = top-left
+*/
+
+#include <Adafruit_NeoPixel.h>
+
+#define LED_PIN 3
+#define WIDTH 4
+#define HEIGHT 4
+#define NUM_LEDS 16
+
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// Brightness (0–255)
+int brightness = 20;
+
+// Convert (x, y) → LED number
+int getIndex(int x, int y)
+{
+    if (y % 2 == 0)
+    {
+        return y * WIDTH + x;
+    }
+    else
+    {
+        return y * WIDTH + (WIDTH - 1 - x);
+    }
+}
+
+// Set one LED using (x, y)
+void setPixel(int x, int y, int r, int g, int b)
+{
+    strip.setPixelColor(getIndex(x, y), strip.Color(r, g, b));
+}
+
+// Turn all LEDs off
+void clearLEDs()
+{
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        strip.setPixelColor(i, 0);
+    }
+}
+
+void setup()
+{
+    strip.begin();
+    strip.setBrightness(brightness);
+    strip.show();
+}
+
+void loop()
+{
+    clearLEDs();
+
+    // =====================
+    // RGB COLOUR EXAMPLES
+    // =====================
+
+    setPixel(0, 0, 255, 0, 0); // Red
+    setPixel(1, 0, 0, 255, 0); // Green
+    setPixel(2, 0, 0, 0, 255); // Blue
+
+    strip.show();
+
+    delay(1000);
+}

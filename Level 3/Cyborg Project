@@ -1,0 +1,361 @@
+/*
+Things to try (Easy, Medium, Hard):
+
+1) (E) Change background color of the page or button
+2) (E) Change button text or size
+3) (M) Make multiple buttons that control different pins
+4) (H) Add sliders to control brightness with PWM
+*/
+
+// ============================================================
+// LIBRARIES
+// ============================================================
+#include <WiFi.h>
+#include <WebServer.h>
+
+// ============================================================
+// PIN MAP / QUICK REFERENCE
+// ============================================================
+/*
+Forward  -> forwardPin  -> 18
+Left     -> leftPin     -> 19
+Right    -> rightPin    -> 21
+Reverse  -> reversePin -> 22
+TEST     -> testPin     -> 2
+*/
+
+// ============================================================
+// STUDENT EDIT AREA — Change pins if needed
+// ============================================================
+int forwardPin = 18;   // Forward
+int leftPin    = 19;   // Left
+int rightPin   = 21;   // Right
+int reversePin = 22;   // Reverse
+int testPin    = 2;    // TEST (centre)
+
+// AP mode credentials
+const char* apSSID = "yourAP";
+const char* apPassword = "12345678";
+// ============================================================
+
+// ============================================================
+// SYSTEM VARIABLES — DO NOT EDIT BELOW
+// ============================================================
+WebServer server(80);
+
+// ============================================================
+// STUDENT SAFE HTML — Copy/Paste Only
+// ============================================================
+const char STUDENT_HTML[] PROGMEM = R"=====(
+<!-- ================= STUDENT SAFE COPY/PASTE ================= -->
+<!-- Copy everything from <html> to </html> below into your HTML editor -->
+<!-- Recommended editor: https://www.w3schools.com/html/tryit.asp?filename=tryhtml_editor -->
+
+<html>
+
+<head>
+
+<!-- Makes layout scale correctly on phones/tablets -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+
+/* =====================================================
+   PAGE APPEARANCE
+   ===================================================== */
+
+body {
+  font-family: Arial;     /* Font used */
+  text-align:center;      /* Center text */
+  background:#f2f2f2;     /* Light gray background */
+}
+
+
+/* =====================================================
+   BUTTON GRID LAYOUT
+   Creates a 3x3 grid used to position buttons
+   ===================================================== */
+
+.grid {
+  display:grid;
+
+  /* Width of each column */
+  grid-template-columns: 120px 120px 120px;
+
+  /* Height of each row */
+  grid-template-rows: 100px 100px 100px;
+
+  justify-content:center; /* Center grid on page */
+  gap:10px;               /* Space between buttons */
+  margin-top:40px;        /* Space above grid */
+}
+
+
+/* =====================================================
+   GENERAL BUTTON STYLE
+   Applies to ALL buttons
+   ===================================================== */
+
+button {
+  font-size:18px;       /* Text size */
+  border-radius:12px;   /* Rounded corners */
+
+  /* Prevent text highlighting while pressing */
+  user-select:none;
+  -webkit-user-select:none;
+  -ms-user-select:none;
+  -moz-user-select:none;
+
+  outline:none;         /* Removes click highlight */
+}
+
+
+/* =====================================================
+   BUTTON POSITIONS
+   Places buttons in diamond pattern
+   ===================================================== */
+
+/* Forward */
+.f {
+  grid-column:2;
+  grid-row:1;
+}
+
+/* Left */
+.l {
+  grid-column:1;
+  grid-row:2;
+}
+
+/* Test (center button + blue color) */
+.t {
+  grid-column:2;
+  grid-row:2;
+  background:#66ccff;
+}
+
+/* Right */
+.r {
+  grid-column:3;
+  grid-row:2;
+}
+
+/* Reverse */
+.b {
+  grid-column:2;
+  grid-row:3;
+}
+
+</style>
+</head>
+
+
+<!-- Disable right-click menu -->
+<body oncontextmenu="return false;">
+
+<h2>ESP32 Cyborg Project</h2>
+
+<!-- Container holding all buttons -->
+<div class="grid">
+
+
+<!-- =====================================================
+     FORWARD BUTTON
+     Sends signals to ESP32 web server
+
+     /f?s=1 → pressed
+     /f?s=0 → released
+===================================================== -->
+<button class="f"
+  ontouchstart="fetch('/f?s=1')"
+  ontouchend="fetch('/f?s=0')"
+  onmousedown="fetch('/f?s=1')"
+  onmouseup="fetch('/f?s=0')">
+Forward
+</button>
+
+
+<!-- =====================================================
+     LEFT BUTTON
+===================================================== -->
+<button class="l"
+  ontouchstart="fetch('/l?s=1')"
+  ontouchend="fetch('/l?s=0')"
+  onmousedown="fetch('/l?s=1')"
+  onmouseup="fetch('/l?s=0')">
+Left
+</button>
+
+
+<!-- =====================================================
+     TEST BUTTON
+===================================================== -->
+<button class="t"
+  ontouchstart="fetch('/t?s=1')"
+  ontouchend="fetch('/t?s=0')"
+  onmousedown="fetch('/t?s=1')"
+  onmouseup="fetch('/t?s=0')">
+TEST
+</button>
+
+
+<!-- =====================================================
+     RIGHT BUTTON
+===================================================== -->
+<button class="r"
+  ontouchstart="fetch('/r?s=1')"
+  ontouchend="fetch('/r?s=0')"
+  onmousedown="fetch('/r?s=1')"
+  onmouseup="fetch('/r?s=0')">
+Right
+</button>
+
+
+<!-- =====================================================
+     REVERSE BUTTON
+===================================================== -->
+<button class="b"
+  ontouchstart="fetch('/b?s=1')"
+  ontouchend="fetch('/b?s=0')"
+  onmousedown="fetch('/b?s=1')"
+  onmouseup="fetch('/b?s=0')">
+Reverse
+</button>
+
+
+</div>
+
+</body>
+</html>
+
+<!-- ================= END STUDENT SAFE COPY/PASTE ================= -->
+)=====";
+
+// ============================================================
+// HELPERS
+// ============================================================
+void sendOK()
+{
+    server.send(200, "text/plain", "OK");
+}
+
+// ============================================================
+// SERVER HANDLERS — SIMPLE IF/ELSE FORMAT
+// ============================================================
+void btnForward()
+{
+    String s = server.arg("s");
+    if (s == "1")
+    {
+        digitalWrite(forwardPin, HIGH);
+    }
+    else
+    {
+        digitalWrite(forwardPin, LOW);
+    }
+    sendOK();
+}
+
+void btnLeft()
+{
+    String s = server.arg("s");
+    if (s == "1")
+    {
+        digitalWrite(leftPin, HIGH);
+    }
+    else
+    {
+        digitalWrite(leftPin, LOW);
+    }
+    sendOK();
+}
+
+void btnRight()
+{
+    String s = server.arg("s");
+    if (s == "1")
+    {
+        digitalWrite(rightPin, HIGH);
+    }
+    else
+    {
+        digitalWrite(rightPin, LOW);
+    }
+    sendOK();
+}
+
+void btnReverse()
+{
+    String s = server.arg("s");
+    if (s == "1")
+    {
+        digitalWrite(reversePin, HIGH);
+    }
+    else
+    {
+        digitalWrite(reversePin, LOW);
+    }
+    sendOK();
+}
+
+void btnTest()
+{
+    String s = server.arg("s");
+    if (s == "1")
+    {
+        digitalWrite(testPin, HIGH);
+    }
+    else
+    {
+        digitalWrite(testPin, LOW);
+    }
+    sendOK();
+}
+
+// ============================================================
+// ROOT PAGE
+// ============================================================
+void root()
+{
+    server.send_P(200, "text/html", STUDENT_HTML);
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+void setup()
+{
+    Serial.begin(115200);
+
+    // Configure pins as outputs
+    pinMode(forwardPin, OUTPUT);
+    pinMode(leftPin,    OUTPUT);
+    pinMode(rightPin,   OUTPUT);
+    pinMode(reversePin, OUTPUT);
+    pinMode(testPin,    OUTPUT);
+
+    // Start Access Point
+    WiFi.softAP(apSSID, apPassword);
+    Serial.print("AP mode IP: ");
+    Serial.println(WiFi.softAPIP());
+
+    // Setup URL handlers
+    server.on("/", root);                 // Serves HTML page
+    server.on("/f", btnForward);          // Forward button
+    server.on("/l", btnLeft);             // Left button
+    server.on("/r", btnRight);            // Right button
+    server.on("/b", btnReverse);          // Reverse button
+    server.on("/t", btnTest);             // TEST button
+
+    // Start web server
+    server.begin();
+    Serial.println("Server started!");
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+void loop()
+{
+    server.handleClient();
+}

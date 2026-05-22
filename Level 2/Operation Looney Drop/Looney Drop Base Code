@@ -112,6 +112,7 @@ void standby()
   driveServo.write(stop);
 }
 
+// Drop behaviour
 void drop()
 {
   dropServo.write(90); // Start drop servo in middle position

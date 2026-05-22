@@ -1,0 +1,91 @@
+/*
+Things to try (Easy, Medium, Hard):
+1) (E) Create 2 new unique functions
+2) (M) Convert delays to millis
+3) (M) Include facial expressions with the RGB matrix
+4) (M) Randomly select a new function each time the switch is hit
+*/
+
+#include <ESP32Servo.h>  //Library can be found at: https://github.com/madhephaestus/ESP32Servo
+
+Servo myservo;
+
+
+// Variables that don't change
+int ledPin = 3;     //variables that store component pins
+int swPin = 2;
+int spkrPin = 1;
+int servoPin = 4;
+
+int extend = 180;
+int retract = 0;
+
+
+//Variables that can change
+int swState;      //store button state ex. HIGH or LOW
+int mode;         //store the current mode
+
+
+// the setup function runs once when you press reset or power the board
+void setup() 
+{
+  pinMode(ledPin, OUTPUT);      //Set inputs and outputs for all used pins
+  pinMode(spkrPin, OUTPUT);
+  pinMode(swPin, INPUT_PULLUP);
+
+  myservo.setPeriodHertz(50);       //standard servo frequency
+  myservo.attach(servoPin, 500, 2400);
+
+  Serial.begin(9600);               //Turn on Serial monitor for troubleshooting
+}
+
+
+// the loop function runs over and over again forever
+void loop() 
+{
+  swState = digitalRead(swPin);     //Check switch press and store
+  Serial.println(swState);
+
+  
+  //Button pressed
+  if (swState == LOW)
+  {
+    chirp();
+    //hesitate();
+  }
+  
+  //Button not pressed
+  if (swState == HIGH)
+  {
+    goHome();
+  }
+
+  delay(20);      //small delay for button debounce
+}
+
+
+//Chirp behaviour
+void chirp()
+{
+  myservo.write(extend);       //move servo outward
+  digitalWrite(ledPin, HIGH);  //turn LED on
+  tone(spkrPin, 400);          //play tone
+}
+
+
+//Hesitation behaviour
+void hesitate()
+{
+  myservo.write(90);           //move servo halfway
+  delay(2000);                 //pause
+  myservo.write(extend);       //extend again
+}
+
+
+//Return to home position
+void goHome()
+{
+  myservo.write(retract);      //move servo inward
+  noTone(spkrPin);             //stop sound
+  digitalWrite(ledPin, LOW);   //turn LED off
+}

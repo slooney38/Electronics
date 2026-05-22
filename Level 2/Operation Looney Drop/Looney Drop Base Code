@@ -21,8 +21,8 @@ int drivePin = 19;
 int dropPin = 21;
 int ledPIN = 2;
 
-int stop = 90;
-int FWD = 180;
+int stop = 90;  //swap these values if your servo moves in the opposite direction than expected
+int FWD = 180;  //swap these values if your servo moves in the opposite direction than expected
 int REV = 0;
 
 Servo driveServo; // Create servo objects

@@ -25,9 +25,8 @@ int stop = 90; // swap these values if your servo moves in the opposite directio
 int fwd = 180; // swap these values if your servo moves in the opposite direction than expected
 int rev = 0;
 
-// Create servo objects
-Servo driveServo;
-Servo dropServo;
+Servo driveServo;  // Create  drive servo object
+Servo dropServo;  // Create drop servo object
 
 // ------------------------
 // Variables that can change

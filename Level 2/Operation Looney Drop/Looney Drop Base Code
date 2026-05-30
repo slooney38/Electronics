@@ -1,9 +1,9 @@
 /*
 Things to try (Easy, Medium, Hard):
 1) (E) Use Onboard LED to indicate Run and Standby Modes
-2) (E) Add instructions to the "Drop" function
+2) (E) Program instructions to the "Drop" function
 3) (M) Programmable drop sequence (ex. drop 2nd and 4th then return for 3rd and 1st)
-4) (M)
+4) (M) Program a "Return to Start" function that executes after the drop sequence is complete
 5) (H) Button click to select Standby, Autonomous or Remote Control Mode
 */
 
@@ -21,11 +21,12 @@ int drivePin = 19;
 int dropPin = 21;
 int ledPIN = 2;
 
-int stop = 90;  //swap these values if your servo moves in the opposite direction than expected
-int FWD = 180;  //swap these values if your servo moves in the opposite direction than expected
-int REV = 0;
+int stop = 90; // swap these values if your servo moves in the opposite direction than expected
+int fwd = 180; // swap these values if your servo moves in the opposite direction than expected
+int rev = 0;
 
-Servo driveServo; // Create servo objects
+// Create servo objects
+Servo driveServo;
 Servo dropServo;
 
 // ------------------------
@@ -40,6 +41,9 @@ int toggle = 0; // 0 = standby, 1 = run
 unsigned long lastDebounceTime = 0; // Debounce variables
 unsigned long debounceDelay = 50;
 
+// ------------------------
+// Setup
+// ------------------------
 void setup()
 {
   pinMode(ledPIN, OUTPUT);
@@ -56,29 +60,42 @@ void setup()
   Serial.begin(9600);
 }
 
-// the loop function runs over and over again forever
+// ------------------------
+// Main loop
+// ------------------------
 void loop()
 {
-  btnState = digitalRead(btnPin);       // read button directly into btnState
-  sensorState = digitalRead(sensorPin); // read sensor state
+  // Read inputs
+  btnState = digitalRead(btnPin);
+  sensorState = digitalRead(sensorPin);
 
-  // If button changed, reset debounce timer
+  Serial.println(btnState); // Debug button state
+
+  // ------------------------
+  // Debounce logic
+  // ------------------------
+
+  // If button state changed, reset debounce timer
   if (btnState != lastBtnState)
   {
     lastDebounceTime = millis();
   }
 
-  // If stable long enough, accept the change
+  // If stable long enough, accept change
   if ((millis() - lastDebounceTime) > debounceDelay)
   {
-    // Detect a press (LOW → HIGH transition)
+    // Detect button press (LOW -> HIGH transition)
     if (btnState == HIGH && lastBtnState == LOW)
     {
-      toggle = !toggle; // flip between run and standby
+      toggle = !toggle;
+
+      Serial.print("Toggle = ");
+      Serial.println(toggle);
     }
   }
 
-  lastBtnState = btnState; // save for next loop
+  // Save state for next loop
+  lastBtnState = btnState;
 
   // ------------------------
   // Mode selection
@@ -94,26 +111,37 @@ void loop()
   }
 }
 
+// ------------------------
 // Run behaviour
+// ------------------------
 void run()
 {
   Serial.println("Run Mode");
-  driveServo.write(FWD);
+
+  digitalWrite(ledPIN, HIGH);
+  driveServo.write(fwd);
+
   if (sensorState == HIGH)
   {
-    drop(); // If sensor detects reflective tape, execute drop function
+    drop();
   }
 }
 
+// ------------------------
 // Standby behaviour
+// ------------------------
 void standby()
 {
   Serial.println("Standby Mode");
+
+  digitalWrite(ledPIN, LOW);
   driveServo.write(stop);
 }
 
+// ------------------------
 // Drop behaviour
+// ------------------------
 void drop()
 {
-  dropServo.write(90); // Start drop servo in middle position
+  dropServo.write(90);
 }

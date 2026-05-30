@@ -4,7 +4,7 @@ Things to try (Easy, Medium, Hard):
 2) (E) Program instructions to the "Drop" function
 3) (M) Programmable drop sequence (ex. drop 2nd and 4th then return for 3rd and 1st)
 4) (M) Program a "Return to Start" function that executes after the drop sequence is complete
-5) (H) Button click to select Standby, Autonomous or Remote Control Mode
+5) (H) Button click to select Standby, Autonomous or Remote Control Mode (ex. phone control interface)
 */
 
 // ------------------------
@@ -67,8 +67,6 @@ void loop()
   // Read inputs
   btnState = digitalRead(btnPin);
   sensorState = digitalRead(sensorPin);
-
-  Serial.println(btnState); // Debug button state
 
   // ------------------------
   // Debounce logic

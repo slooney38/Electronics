@@ -72,7 +72,6 @@ void chirp()
   tone(spkrPin, 400);          //play tone
 }
 
-
 //Hesitation behaviour
 void hesitate()
 {

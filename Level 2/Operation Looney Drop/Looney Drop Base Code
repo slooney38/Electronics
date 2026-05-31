@@ -98,7 +98,7 @@ void loop()
   // Mode selection
   // ------------------------
 
-  if (toggle == 1)
+  if (toggle == 1) // Consider adding a 3rd (auto) mode here
   {
     run();
   }

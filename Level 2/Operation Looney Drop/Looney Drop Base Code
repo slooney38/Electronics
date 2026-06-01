@@ -15,30 +15,25 @@ Things to try (Easy, Medium, Hard):
 // ------------------------
 // Variables that don't change
 // ------------------------
-int sensorPin = 15; // These pins may be different for your setup - check the pinout for your board
+int sensorPin = 15;
 int btnPin = 18;
 int drivePin = 19;
 int dropPin = 21;
 int ledPIN = 2;
 
-int stop = 90; // swap these values if your servo moves in the opposite direction than expected
-int fwd = 180; // swap these values if your servo moves in the opposite direction than expected
+int stop = 90;
+int fwd = 180;
 int rev = 0;
 
-Servo driveServo;  // Create  drive servo object
-Servo dropServo;  // Create drop servo object
+Servo driveServo;
+Servo dropServo;
 
 // ------------------------
 // Variables that can change
 // ------------------------
-int btnState;           // current button state
-int sensorState;        // current sensor state
-int lastBtnState = LOW; // previous button state
-
-int toggle = 0; // 0 = standby, 1 = run
-
-unsigned long lastDebounceTime = 0; // Debounce variables
-unsigned long debounceDelay = 50;
+int btnState;
+int sensorState;
+int toggle = 0;
 
 // ------------------------
 // Setup
@@ -49,7 +44,6 @@ void setup()
   pinMode(sensorPin, INPUT);
   pinMode(btnPin, INPUT);
 
-  // Servo setup for ESP32
   driveServo.setPeriodHertz(50);
   driveServo.attach(drivePin, 500, 2400);
 
@@ -64,40 +58,21 @@ void setup()
 // ------------------------
 void loop()
 {
-  // Read inputs
   btnState = digitalRead(btnPin);
   sensorState = digitalRead(sensorPin);
 
   // ------------------------
-  // Debounce logic
+  // Button toggle (simple edge detect)
   // ------------------------
-
-  // If button state changed, reset debounce timer
-  if (btnState != lastBtnState)
+  if (btnState == HIGH)
   {
-    lastDebounceTime = millis();
+    toggle = !toggle;
+    delay(150);
   }
 
-  // If stable long enough, accept change
-  if ((millis() - lastDebounceTime) > debounceDelay)
-  {
-    // Detect button press (LOW -> HIGH transition)
-    if (btnState == HIGH && lastBtnState == LOW)
-    {
-      toggle = !toggle;
-
-      Serial.print("Toggle = ");
-      Serial.println(toggle);
-    }
-  }
-
-  // Save state for next loop
-  lastBtnState = btnState;
-
   // ------------------------
-  // Mode selection
+  // Mode control
   // ------------------------
-
   if (toggle == 1)
   {
     run();
@@ -109,7 +84,7 @@ void loop()
 }
 
 // ------------------------
-// Run behaviour
+// Run mode
 // ------------------------
 void run()
 {
@@ -125,7 +100,7 @@ void run()
 }
 
 // ------------------------
-// Standby behaviour
+// Standby mode
 // ------------------------
 void standby()
 {
@@ -136,9 +111,11 @@ void standby()
 }
 
 // ------------------------
-// Drop behaviour
+// Drop action
 // ------------------------
 void drop()
 {
+  Serial.println("DROP");
+
   dropServo.write(90);
 }

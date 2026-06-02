@@ -91,7 +91,7 @@ void run()
   Serial.println("Run Mode");
 
   digitalWrite(ledPIN, HIGH);
-  driveServo.write(fwd);
+  driveServo.write(stop); // Initially set to stop, adjust servo trim pot if necessary
 
   if (sensorState == HIGH)
   {
@@ -115,7 +115,7 @@ void standby()
 // ------------------------
 void drop()
 {
-  Serial.println("DROP");
+  Serial.println("Drop Mode");
 
   dropServo.write(90);
 }

@@ -73,8 +73,7 @@ void loop()
   // ------------------------
   // Mode control
   // ------------------------
-  if (toggle == 1)
-  {
+  if (toggle == 1) //Consider creating additional mode below
     run();
   }
   else

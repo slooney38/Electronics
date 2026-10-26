@@ -1,0 +1,1350 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+#include <time.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+#include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
+
+// ======================================================
+// CLASSROOM SCANNER
+// ESP32 Dev Module
+// Barcode scanner: RX=16, TX=17
+// OLED SH1106: SDA=21, SCL=22
+// WS2812B LED strip: DIN=18
+// Tactile button: GPIO 25 to GND
+// ======================================================
+
+HardwareSerial scanner(2);
+WebServer server(80);
+Adafruit_SH1106G oled(128, 64, &Wire, -1);
+
+const uint8_t LED_PIN = 18;
+const uint16_t LED_COUNT = 8;
+uint8_t ledBrightness = 50;
+Preferences settingsPrefs;
+Adafruit_NeoPixel ledStrip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+int ledStudentIndex[LED_COUNT];
+
+bool oledReady = false;
+unsigned long lastOledUpdate = 0;
+const unsigned long OLED_REFRESH_MS = 1000;
+const unsigned long OLED_PAGE_MS = 3000;
+
+// Push button and reason selection
+const uint8_t BUTTON_PIN = 25;
+const unsigned long BUTTON_DEBOUNCE_MS = 40;
+unsigned long reasonTimeoutMs = 3000;
+const unsigned long SCAN_MESSAGE_MS = 1800;
+
+const char* REASONS[] = {
+  "Washroom",
+  "Counsellor Appt"
+};
+
+const int REASON_COUNT = sizeof(REASONS) / sizeof(REASONS[0]);
+
+int selectedReason = -1;
+unsigned long reasonSelectionDeadline = 0;
+bool buttonLastReading = HIGH;
+bool buttonStableState = HIGH;
+unsigned long buttonLastChange = 0;
+unsigned long buttonPressedAt = 0;
+bool buttonPressHandled = false;
+int pendingOutStudentIndex = -1;
+unsigned long scanMessageUntil = 0;
+String scanMessage = "";
+bool reasonMenuVisible = false;
+
+const char* SCHOOL_SSID = "SD38_Guest";
+const char* SCHOOL_PASS = "rpguest24";
+const char* AP_SSID = "ClassScanner";
+const char* AP_PASS = "classroom123";
+
+const int MAX_STUDENTS = 500;
+
+struct Student {
+  String id;
+  String first;
+  String last;
+  bool out;
+  String outTime;
+  String outReason;
+};
+
+Student students[MAX_STUDENTS];
+int studentCount = 0;
+
+String lastScan = "None";
+String lastTime = "None";
+File uploadFile;
+bool uploadOK = false;
+
+// Forward declarations
+String pageStart(String title, bool refresh = false);
+String pageEnd();
+String esc(String s);
+time_t timestampToEpoch(String ts);
+void updateOledDisplay(bool force = false);
+void showReasonMenu();
+void showScanMessage();
+void finishPendingOut();
+void handleReasonButton();
+void updateLedStrip();
+
+// ======================================================
+// OLED DISPLAY
+// ======================================================
+
+void showReasonMenu() {
+  if (!oledReady) return;
+
+  oled.clearDisplay();
+  oled.setTextColor(SH110X_WHITE);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println("REASON FOR LEAVING");
+  oled.drawLine(0, 9, 127, 9, SH110X_WHITE);
+
+  if (pendingOutStudentIndex >= 0 &&
+      pendingOutStudentIndex < studentCount) {
+    String name = students[pendingOutStudentIndex].first + " " +
+                  students[pendingOutStudentIndex].last;
+    if (name.length() > 21) name = name.substring(0, 21);
+    oled.setCursor(0, 11);
+    oled.print(name);
+  }
+
+  for (int i = 0; i < REASON_COUNT; i++) {
+    oled.setCursor(0, 22 + i * 9);
+    oled.print(i == selectedReason ? "> " : "  ");
+    oled.print(REASONS[i]);
+  }
+
+  oled.drawLine(0, 43, 127, 43, SH110X_WHITE);
+  if (selectedReason < 0) {
+    oled.setCursor(0, 49);
+    oled.print("Tap to select reason");
+  } else {
+    // Visual 3-second countdown bar. It fills as the deadline approaches.
+    oled.setCursor(0, 45);
+    oled.print("Entering...");
+
+    const int barX = 4;
+    const int barY = 55;
+    const int barW = 120;
+    const int barH = 7;
+    oled.drawRect(barX, barY, barW, barH, SH110X_WHITE);
+
+    unsigned long now = millis();
+    unsigned long remaining = (long)(reasonSelectionDeadline - now) > 0
+                              ? reasonSelectionDeadline - now : 0;
+    unsigned long elapsed = reasonTimeoutMs - min((unsigned long)reasonTimeoutMs, remaining);
+    int innerW = barW - 4;
+    int fillW = (int)((elapsed * (unsigned long)innerW) / reasonTimeoutMs);
+    if (fillW > 0) {
+      oled.fillRect(barX + 2, barY + 2, fillW, barH - 4, SH110X_WHITE);
+    }
+  }
+  oled.display();
+}
+
+void showScanMessage() {
+  if (!oledReady) return;
+
+  oled.clearDisplay();
+  oled.setTextColor(SH110X_WHITE);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println(scanMessage);
+  oled.drawLine(0, 10, 127, 10, SH110X_WHITE);
+  oled.setCursor(0, 24);
+  oled.println("Scan recorded");
+  oled.display();
+}
+
+void finishPendingOut() {
+  if (pendingOutStudentIndex < 0 ||
+      pendingOutStudentIndex >= studentCount) return;
+  if (selectedReason < 0 || selectedReason >= REASON_COUNT) return;
+
+  Student* s = &students[pendingOutStudentIndex];
+  String timestamp = getTimestamp();
+  s->out = true;
+  s->outTime = timestamp;
+  s->outReason = String(REASONS[selectedReason]);
+  logEvent(s, "OUT", timestamp, s->outReason);
+
+  lastScan = s->first + " " + s->last + " (OUT)";
+  lastTime = timestamp;
+  Serial.println(lastScan);
+
+  scanMessage = s->first + " " + s->last + " OUT";
+  scanMessageUntil = millis() + SCAN_MESSAGE_MS;
+  pendingOutStudentIndex = -1;
+  reasonSelectionDeadline = 0;
+  reasonMenuVisible = false;
+  updateOledDisplay(true);
+  updateLedStrip();
+}
+
+void handleReasonButton() {
+  bool reading = digitalRead(BUTTON_PIN);
+
+  if (reading != buttonLastReading) {
+    buttonLastChange = millis();
+    buttonLastReading = reading;
+  }
+
+  if (millis() - buttonLastChange < BUTTON_DEBOUNCE_MS ||
+      reading == buttonStableState) return;
+
+  buttonStableState = reading;
+
+  // A short press is registered on release. Long presses also count as one tap.
+  if (buttonStableState == HIGH && pendingOutStudentIndex >= 0) {
+    if (selectedReason < 0) {
+      selectedReason = 0;
+    } else {
+      selectedReason = (selectedReason + 1) % REASON_COUNT;
+    }
+
+    // Give the user three seconds after the most recent selection/change.
+    reasonSelectionDeadline = millis() + reasonTimeoutMs;
+    showReasonMenu();
+    lastOledUpdate = millis();
+  } else if (buttonStableState == HIGH && pendingOutStudentIndex < 0) {
+    reasonMenuVisible = false;
+    updateOledDisplay(true);
+  }
+}
+
+void updateOledDisplay(bool force) {
+  if (!oledReady) return;
+
+  unsigned long nowMs = millis();
+
+  // A selected reason is automatically recorded after the visible 3-second countdown.
+  if (pendingOutStudentIndex >= 0) {
+    if (selectedReason >= 0 && reasonSelectionDeadline != 0 &&
+        (long)(nowMs - reasonSelectionDeadline) >= 0) {
+      finishPendingOut();
+      return;
+    }
+    // Refresh the progress bar frequently so it visibly advances smoothly.
+    if (force || nowMs - lastOledUpdate >= 100UL) {
+      lastOledUpdate = nowMs;
+      showReasonMenu();
+    }
+    return;
+  }
+
+  if (scanMessageUntil != 0 && nowMs < scanMessageUntil) {
+    if (force || nowMs - lastOledUpdate >= OLED_REFRESH_MS) {
+      lastOledUpdate = nowMs;
+      showScanMessage();
+    }
+    return;
+  }
+
+  if (scanMessageUntil != 0 && nowMs >= scanMessageUntil) {
+    scanMessageUntil = 0;
+  }
+
+  if (!force && nowMs - lastOledUpdate < OLED_REFRESH_MS) return;
+  lastOledUpdate = nowMs;
+
+  int outCount = 0;
+  for (int i = 0; i < studentCount; i++) {
+    if (students[i].out) outCount++;
+  }
+
+  oled.clearDisplay();
+  oled.setTextColor(SH110X_WHITE);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.print("STUDENTS OUT: ");
+  oled.print(outCount);
+  oled.drawLine(0, 10, 127, 10, SH110X_WHITE);
+
+  if (outCount == 0) {
+    oled.setCursor(0, 25);
+    oled.print("No students out");
+    oled.setCursor(0, 40);
+    oled.print("Scan student card");
+    oled.display();
+    return;
+  }
+
+  const int namesPerPage = 4;
+  int pageCount = (outCount + namesPerPage - 1) / namesPerPage;
+  int page = (nowMs / OLED_PAGE_MS) % pageCount;
+  int firstOutIndex = page * namesPerPage;
+  int currentOutIndex = 0;
+  int displayed = 0;
+  time_t nowEpoch = time(nullptr);
+
+  for (int i = 0; i < studentCount && displayed < namesPerPage; i++) {
+    if (!students[i].out) continue;
+    if (currentOutIndex >= firstOutIndex) {
+      String name = students[i].first + " " + students[i].last;
+      time_t outEpoch = timestampToEpoch(students[i].outTime);
+      long elapsedMinutes =
+        (outEpoch > 0 && nowEpoch >= outEpoch)
+        ? (long)(nowEpoch - outEpoch) / 60L : 0L;
+      String duration = String(elapsedMinutes) + "m";
+      int maxNameLength = 21 - duration.length() - 2;
+      if (maxNameLength < 1) maxNameLength = 1;
+      if ((int)name.length() > maxNameLength) name = name.substring(0, maxNameLength);
+      oled.setCursor(0, 13 + displayed * 12);
+      oled.print(name);
+      oled.print("  ");
+      oled.print(duration);
+      displayed++;
+    }
+    currentOutIndex++;
+  }
+
+  if (pageCount > 1) {
+    oled.setCursor(94, 55);
+    oled.print(String(page + 1) + "/" + String(pageCount));
+  }
+  oled.display();
+}
+
+// ======================================================
+// TIME FUNCTIONS
+// ======================================================
+
+String getTimestamp() {
+  struct tm ti;
+
+  if (!getLocalTime(&ti, 1000)) {
+    return "No Time";
+  }
+
+  char buf[24];
+  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ti);
+  return String(buf);
+}
+
+String getClockTime(String ts) {
+  if (ts.length() >= 19) return ts.substring(11, 19);
+  return "--:--:--";
+}
+
+time_t timestampToEpoch(String ts) {
+  int y, mo, d, h, mi, s;
+
+  if (sscanf(ts.c_str(), "%d-%d-%d %d:%d:%d",
+             &y, &mo, &d, &h, &mi, &s) != 6) {
+    return 0;
+  }
+
+  struct tm ti = {};
+  ti.tm_year = y - 1900;
+  ti.tm_mon = mo - 1;
+  ti.tm_mday = d;
+  ti.tm_hour = h;
+  ti.tm_min = mi;
+  ti.tm_sec = s;
+  ti.tm_isdst = -1;
+
+  return mktime(&ti);
+}
+
+String formatDuration(long seconds) {
+  if (seconds < 0) seconds = 0;
+
+  long minutes = seconds / 60;
+  long hours = minutes / 60;
+  minutes %= 60;
+
+  if (hours > 0) {
+    return String(hours) + " hr " + String(minutes) + " min";
+  }
+
+  return String(minutes) + " min";
+}
+
+long minutesBetween(String start, String finish) {
+  time_t a = timestampToEpoch(start);
+  time_t b = timestampToEpoch(finish);
+
+  if (a == 0 || b == 0 || b < a) return 0;
+  return (long)(b - a) / 60;
+}
+
+// ======================================================
+// LED STRIP
+// Green: under 5 min
+// Orange: 5 to under 10 min
+// Solid red: 10 to under 15 min
+// Blinking red: 15 min or longer
+// ======================================================
+
+int findLedForStudent(int studentIndex) {
+  for (int led = 0; led < LED_COUNT; led++) {
+    if (ledStudentIndex[led] == studentIndex) return led;
+  }
+
+  return -1;
+}
+
+void updateLedAssignments() {
+  for (int led = 0; led < LED_COUNT; led++) {
+    int idx = ledStudentIndex[led];
+
+    if (idx < 0 || idx >= studentCount || !students[idx].out) {
+      ledStudentIndex[led] = -1;
+    }
+  }
+
+  for (int i = 0; i < studentCount; i++) {
+    if (!students[i].out || findLedForStudent(i) >= 0) continue;
+
+    for (int led = 0; led < LED_COUNT; led++) {
+      if (ledStudentIndex[led] < 0) {
+        ledStudentIndex[led] = i;
+        break;
+      }
+    }
+  }
+}
+
+void updateLedStrip() {
+  updateLedAssignments();
+  time_t now = time(nullptr);
+
+  for (int led = 0; led < LED_COUNT; led++) {
+    uint32_t color = ledStrip.Color(0, 0, 0);
+    int idx = ledStudentIndex[led];
+
+    if (idx >= 0 && idx < studentCount && students[idx].out) {
+      time_t start = timestampToEpoch(students[idx].outTime);
+
+      long elapsedSeconds =
+        (start > 0 && now >= start) ? (long)(now - start) : 0;
+
+      if (elapsedSeconds < 5L * 60L) {
+        color = ledStrip.Color(0, 255, 0);
+      } else if (elapsedSeconds < 10L * 60L) {
+        color = ledStrip.Color(255, 70, 0);
+      } else if (elapsedSeconds < 15L * 60L) {
+        color = ledStrip.Color(255, 0, 0);
+      } else {
+        color = (millis() % 1000UL < 500UL)
+                ? ledStrip.Color(255, 0, 0)
+                : ledStrip.Color(0, 0, 0);
+      }
+    }
+
+    ledStrip.setPixelColor(led, color);
+  }
+
+  ledStrip.show();
+}
+
+// ======================================================
+// STUDENT LOOKUP AND CSV LOADING
+// ======================================================
+
+Student* findStudent(String id) {
+  id.trim();
+
+  for (int i = 0; i < studentCount; i++) {
+    if (students[i].id == id) return &students[i];
+  }
+
+  return nullptr;
+}
+
+void loadStudents() {
+  studentCount = 0;
+
+  if (!SPIFFS.exists("/students.csv")) {
+    Serial.println("No students.csv found");
+    return;
+  }
+
+  File f = SPIFFS.open("/students.csv", FILE_READ);
+  if (!f) return;
+
+  f.readStringUntil('\n');
+
+  while (f.available() && studentCount < MAX_STUDENTS) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+
+    if (line.length() == 0) continue;
+
+    int p1 = line.indexOf(',');
+    int p2 = line.indexOf(',', p1 + 1);
+
+    if (p1 < 0 || p2 < 0) continue;
+
+    String id = line.substring(0, p1);
+    String first = line.substring(p1 + 1, p2);
+    String last = line.substring(p2 + 1);
+
+    id.trim();
+    first.trim();
+    last.trim();
+
+    if (id.length() == 0) continue;
+
+    bool duplicate = false;
+
+    for (int i = 0; i < studentCount; i++) {
+      if (students[i].id == id) {
+        duplicate = true;
+        break;
+      }
+    }
+
+    if (duplicate) continue;
+
+    students[studentCount].id = id;
+    students[studentCount].first = first;
+    students[studentCount].last = last;
+    students[studentCount].out = false;
+    students[studentCount].outTime = "";
+    students[studentCount].outReason = "";
+    studentCount++;
+  }
+
+  f.close();
+
+  Serial.print("Students loaded: ");
+  Serial.println(studentCount);
+}
+
+// ======================================================
+// ATTENDANCE LOGS
+// ======================================================
+
+void initLogs() {
+  if (!SPIFFS.exists("/logs.csv")) {
+    File f = SPIFFS.open("/logs.csv", FILE_WRITE);
+
+    if (f) {
+      f.println("Timestamp,Pupil#,UsualFirst,UsualLast,Action,Reason");
+      f.close();
+    }
+  }
+}
+
+void logEvent(Student* s, String action, String timestamp, String reason) {
+  File f = SPIFFS.open("/logs.csv", FILE_APPEND);
+
+  if (!f) {
+    Serial.println("ERROR: Cannot write logs.csv");
+    return;
+  }
+
+  f.print(timestamp);
+  f.print(",");
+  f.print(s->id);
+  f.print(",");
+  f.print(s->first);
+  f.print(",");
+  f.print(s->last);
+  f.print(",");
+  f.print(action);
+  f.print(",");
+
+  if (action == "OUT") {
+    f.println(reason);
+  } else {
+    f.println(s->outReason);
+  }
+
+  f.close();
+}
+
+void restoreAttendanceState() {
+  if (!SPIFFS.exists("/logs.csv")) return;
+
+  File f = SPIFFS.open("/logs.csv", FILE_READ);
+  if (!f) return;
+
+  f.readStringUntil('\n');
+
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+
+    if (line.length() == 0) continue;
+
+    int p1 = line.indexOf(',');
+    int p2 = line.indexOf(',', p1 + 1);
+    int p3 = line.indexOf(',', p2 + 1);
+    int p4 = line.indexOf(',', p3 + 1);
+
+    if (p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0) continue;
+
+    String id = line.substring(p1 + 1, p2);
+    String timestamp = line.substring(0, p1);
+    String tail = line.substring(p4 + 1);
+
+    int p5 = tail.indexOf(',');
+    String action = (p5 >= 0) ? tail.substring(0, p5) : tail;
+    String reason = (p5 >= 0) ? tail.substring(p5 + 1) : "Washroom";
+
+    action.trim();
+    reason.trim();
+
+    Student* s = findStudent(id);
+    if (!s) continue;
+
+    if (action == "OUT") {
+      s->out = true;
+      s->outTime = timestamp;
+      s->outReason = reason;
+    } else if (action == "IN") {
+      s->out = false;
+      s->outTime = "";
+      s->outReason = "";
+    }
+  }
+
+  f.close();
+}
+
+// ======================================================
+// HTML HELPERS
+// ======================================================
+
+String esc(String s) {
+  s.replace("&", "&amp;");
+  s.replace("<", "&lt;");
+  s.replace(">", "&gt;");
+  s.replace("\"", "&quot;");
+  s.replace("'", "&#39;");
+  return s;
+}
+
+String pageStart(String title, bool refresh) {
+  String h = "<!DOCTYPE html><html><head>";
+  h += "<meta charset='UTF-8'>";
+  h += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+
+  if (refresh) h += "<meta http-equiv='refresh' content='15'>";
+
+  h += "<title>" + esc(title) + "</title>";
+  h += "<style>";
+  h += "body{font-family:Arial,sans-serif;background:#f2f4f7;";
+  h += "color:#222;margin:20px;line-height:1.5;}";
+  h += "main{max-width:1000px;margin:auto;}";
+  h += ".header{background:#17365d;color:white;padding:20px;border-radius:8px;}";
+  h += ".card{background:white;padding:18px;margin:16px 0;border-radius:8px;}";
+  h += "table{width:100%;border-collapse:collapse;}";
+  h += "th,td{text-align:left;padding:10px;border-bottom:1px solid #ddd;}";
+  h += "th{background:#edf1f5;}";
+  h += ".out{color:#b42318;font-weight:bold;}";
+  h += ".in{color:#087443;font-weight:bold;}";
+  h += ".nav a{display:inline-block;margin:4px 8px 4px 0;}";
+  h += "</style></head><body><main>";
+
+  h += "<div class='header'><h1>Class Scanner</h1>";
+  h += "<p>Classroom Hall Pass and Attendance</p></div>";
+
+  h += "<div class='card nav'>";
+  h += "<p><a href='/'>Dashboard</a></p>";
+  h += "<p><a href='/student-management'>Student Management</a></p>";
+  h += "<p><a href='/attendance-reports'>Attendance Reports</a></p>";
+  h += "<p><a href='/options'>Device options</a></p>";
+  h += "</div>";
+
+  return h;
+}
+
+String pageEnd() {
+  return "</main></body></html>";
+}
+
+// ======================================================
+// DASHBOARD
+// ======================================================
+
+void handleRoot() {
+  String h = pageStart("Dashboard", true);
+
+  int outCount = 0;
+  for (int i = 0; i < studentCount; i++) {
+    if (students[i].out) outCount++;
+  }
+
+  h += "<div class='card'><h2>Dashboard</h2>";
+  h += "<p><b>Students loaded:</b> " + String(studentCount) + "</p>";
+  h += "<p><b>Students currently OUT:</b> " + String(outCount) + "</p>";
+  h += "<p><b>Last scan:</b> " + esc(lastScan) + "</p>";
+  h += "<p><b>Last scan time:</b> " + esc(lastTime) + "</p>";
+  h += "<p>Page refreshes every 15 seconds.</p></div>";
+
+  h += "<div class='card'><h2>Students Currently Out</h2>";
+
+  if (outCount == 0) {
+    h += "<p>No students are currently out.</p>";
+  } else {
+    h += "<table><tr><th>Pupil#</th><th>Student</th>";
+    h += "<th>Time Out</th><th>Duration</th></tr>";
+
+    time_t now = time(nullptr);
+
+    for (int i = 0; i < studentCount; i++) {
+      if (!students[i].out) continue;
+
+      time_t start = timestampToEpoch(students[i].outTime);
+      long elapsed = (start > 0 && now >= start)
+                     ? (long)(now - start) : 0;
+
+      h += "<tr><td>" + esc(students[i].id) + "</td>";
+      h += "<td>" + esc(students[i].first) + " ";
+      h += esc(students[i].last) + "</td>";
+      h += "<td>" + esc(getClockTime(students[i].outTime)) + "</td>";
+      h += "<td class='out'>" + formatDuration(elapsed) + "</td></tr>";
+    }
+
+    h += "</table>";
+  }
+
+  h += "</div>" + pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// UPLOAD STUDENTS CSV
+// ======================================================
+
+void showUploadPage() {
+  String h = pageStart("Upload Students");
+
+  h += "<div class='card'><h2>Upload students.csv</h2>";
+  h += "<p>Required header: Pupil#,UsualFirst,UsualLast</p>";
+  h += "<p>Uploading replaces the existing student list.</p>";
+  h += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
+  h += "<input type='file' name='file' accept='.csv' required>";
+  h += "<p><button type='submit'>Upload CSV</button></p>";
+  h += "</form></div>" + pageEnd();
+
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+void handleUploadComplete() {
+  if (!uploadOK) {
+    server.send(400, "text/plain",
+                "Upload failed. Check that you selected a CSV file and try again.");
+    return;
+  }
+
+  loadStudents();
+  restoreAttendanceState();
+  updateOledDisplay(true);
+  updateLedStrip();
+
+  String h = pageStart("Upload Complete");
+  h += "<div class='card'><h2>Upload Complete</h2>";
+  h += "<p>Students loaded: " + String(studentCount) + "</p>";
+  h += "<p><a href='/'>Return to Dashboard</a></p></div>";
+  h += pageEnd();
+
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+void handleUploadData() {
+  HTTPUpload& u = server.upload();
+
+  if (u.status == UPLOAD_FILE_START) {
+    uploadOK = false;
+
+    if (!u.filename.endsWith(".csv")) {
+      Serial.println("Upload rejected: filename must end in .csv");
+      return;
+    }
+
+    uploadFile = SPIFFS.open("/students.tmp", FILE_WRITE);
+
+    if (!uploadFile) {
+      Serial.println("Could not create temporary upload file");
+    }
+  }
+  else if (u.status == UPLOAD_FILE_WRITE) {
+    if (uploadFile) {
+      size_t written = uploadFile.write(u.buf, u.currentSize);
+
+      if (written != u.currentSize) {
+        Serial.println("Upload write error");
+      }
+    }
+  }
+  else if (u.status == UPLOAD_FILE_END) {
+    if (uploadFile) {
+      uploadFile.close();
+
+      File check = SPIFFS.open("/students.tmp", FILE_READ);
+
+      if (check && check.size() > 0) {
+        String header = check.readStringUntil('\n');
+        header.trim();
+        uploadOK = header == "Pupil#,UsualFirst,UsualLast";
+      }
+
+      if (check) check.close();
+
+      if (uploadOK) {
+        SPIFFS.remove("/students.csv");
+        uploadOK = SPIFFS.rename("/students.tmp", "/students.csv");
+
+        if (!uploadOK) {
+          Serial.println("Could not finalize students.csv");
+        }
+      }
+
+      if (!uploadOK) {
+        SPIFFS.remove("/students.tmp");
+      }
+    }
+  }
+  else if (u.status == UPLOAD_FILE_ABORTED) {
+    if (uploadFile) uploadFile.close();
+    SPIFFS.remove("/students.tmp");
+    uploadOK = false;
+  }
+}
+
+// ======================================================
+// STUDENT MANAGEMENT MENU
+// ======================================================
+
+void showStudentManagement() {
+  String h = pageStart("Student Management");
+
+  h += "<div class='card'><h2>Student Management</h2>";
+  h += "<p>Manage the student list stored on this device.</p>";
+  h += "<p><a href='/students'>View Students</a></p>";
+  h += "<p><a href='/upload'>Upload Students</a></p>";
+  h += "<p><a href='/clearstudents'>Erase All Students</a></p>";
+  h += "</div>";
+
+  h += pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// VIEW STUDENTS
+// ======================================================
+
+void showStudents() {
+  String h = pageStart("Students");
+
+  h += "<div class='card'><h2>Loaded Students</h2>";
+  h += "<p>Total: " + String(studentCount) + "</p>";
+  h += "<table><tr><th>Pupil#</th><th>First Name</th>";
+  h += "<th>Last Name</th><th>Status</th></tr>";
+
+  for (int i = 0; i < studentCount; i++) {
+    h += "<tr><td>" + esc(students[i].id) + "</td>";
+    h += "<td>" + esc(students[i].first) + "</td>";
+    h += "<td>" + esc(students[i].last) + "</td>";
+    h += students[i].out
+      ? "<td class='out'>OUT</td>"
+      : "<td class='in'>IN</td>";
+    h += "</tr>";
+  }
+
+  h += "</table></div>" + pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// DOWNLOAD RAW LOGS
+// ======================================================
+
+void handleLogs() {
+  File f = SPIFFS.open("/logs.csv", FILE_READ);
+
+  if (!f) {
+    server.send(404, "text/plain", "No logs found");
+    return;
+  }
+
+  server.sendHeader(
+    "Content-Disposition",
+    "attachment; filename=attendance_logs.csv"
+  );
+
+  server.streamFile(f, "text/csv");
+  f.close();
+}
+
+// ======================================================
+// ATTENDANCE REPORT
+// Memory-efficient version: no large per-student report array.
+// For each OUT record, scan forward for that student's next IN.
+// ======================================================
+
+bool parseLogLine(String line, String &timestamp, String &id,
+                  String &first, String &last, String &action,
+                  String &reason) {
+  line.trim();
+  if (line.length() == 0) return false;
+
+  int p1 = line.indexOf(',');
+  if (p1 < 0) return false;
+  int p2 = line.indexOf(',', p1 + 1);
+  if (p2 < 0) return false;
+  int p3 = line.indexOf(',', p2 + 1);
+  if (p3 < 0) return false;
+  int p4 = line.indexOf(',', p3 + 1);
+  if (p4 < 0) return false;
+
+  timestamp = line.substring(0, p1);
+  id = line.substring(p1 + 1, p2);
+  first = line.substring(p2 + 1, p3);
+  last = line.substring(p3 + 1, p4);
+
+  String tail = line.substring(p4 + 1);
+  int p5 = tail.indexOf(',');
+  action = (p5 >= 0) ? tail.substring(0, p5) : tail;
+  reason = (p5 >= 0) ? tail.substring(p5 + 1) : "Washroom";
+
+  timestamp.trim();
+  id.trim();
+  first.trim();
+  last.trim();
+  action.trim();
+  reason.trim();
+
+  return action == "OUT" || action == "IN";
+}
+
+void sendReportRow(const String &id, const String &first,
+                   const String &last, const String &timeOut,
+                   const String &timeIn, long minutesOut,
+                   const String &reason) {
+  String row;
+  row.reserve(180);
+  row += id; row += ",";
+  row += first; row += ",";
+  row += last; row += ",";
+  row += timeOut; row += ",";
+  row += timeIn; row += ",";
+  row += String(minutesOut); row += ",";
+  row += reason; row += "\r\n";
+  server.sendContent(row);
+}
+
+void handleReport() {
+  File input = SPIFFS.open("/logs.csv", FILE_READ);
+  if (!input) {
+    server.send(404, "text/plain", "No logs found");
+    return;
+  }
+
+  server.sendHeader(
+    "Content-Disposition",
+    "attachment; filename=attendance_report.csv"
+  );
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/csv; charset=utf-8", "");
+  server.sendContent(
+    "Pupil#,UsualFirst,UsualLast,TimeOut,TimeIn,MinutesOut,Reason\r\n"
+  );
+
+  input.readStringUntil('\n');
+
+  while (input.available()) {
+    String line = input.readStringUntil('\n');
+    String timestamp, id, first, last, action, reason;
+
+    if (!parseLogLine(line, timestamp, id, first, last, action, reason)) {
+      delay(0);
+      continue;
+    }
+
+    if (action != "OUT") {
+      delay(0);
+      continue;
+    }
+
+    // Find the next IN for this student without storing a large array in RAM.
+    const size_t nextPosition = input.position();
+    String timeIn = "";
+    bool foundIn = false;
+
+    File lookAhead = SPIFFS.open("/logs.csv", FILE_READ);
+    if (lookAhead) {
+      lookAhead.readStringUntil('\n');
+      if (nextPosition <= lookAhead.size()) {
+        lookAhead.seek(nextPosition, SeekSet);
+        while (lookAhead.available()) {
+          String futureLine = lookAhead.readStringUntil('\n');
+          String t2, id2, first2, last2, action2, reason2;
+
+          if (parseLogLine(futureLine, t2, id2, first2, last2,
+                           action2, reason2) &&
+              id2 == id && action2 == "IN") {
+            timeIn = t2;
+            foundIn = true;
+            break;
+          }
+          delay(0);
+        }
+      }
+      lookAhead.close();
+    }
+
+    long mins = 0;
+    if (foundIn) {
+      mins = minutesBetween(timestamp, timeIn);
+    } else {
+      time_t start = timestampToEpoch(timestamp);
+      time_t now = time(nullptr);
+      if (start > 0 && now >= start) mins = (long)(now - start) / 60L;
+    }
+
+    sendReportRow(id, first, last, timestamp, timeIn, mins, reason);
+    delay(0);
+  }
+
+  input.close();
+  server.sendContent("");
+}
+
+// ======================================================
+// OPTIONS MENU
+// ======================================================
+
+void showOptions() {
+  String h = pageStart("Device Options");
+  h += "<div class='card'><h2>Device Options</h2>";
+  h += "<form method='POST' action='/options'>";
+  h += "<label for='timeout'><b>Reason selection timeout</b></label><br>";
+  h += "<select id='timeout' name='timeout'>";
+  for (int seconds = 1; seconds <= 10; seconds++) {
+    h += "<option value='" + String(seconds * 1000) + "'";
+    if (reasonTimeoutMs == (unsigned long)seconds * 1000UL) h += " selected";
+    h += ">" + String(seconds) + " second" + (seconds == 1 ? "" : "s") + "</option>";
+  }
+  h += "</select><br><br>";
+  h += "<label for='brightness'><b>LED brightness</b> (0–255)</label><br>";
+  h += "<input id='brightness' type='range' name='brightness' min='0' max='255' value='" + String(ledBrightness) + "' oninput='bv.value=this.value'> ";
+  h += "<output id='bv'>" + String(ledBrightness) + "</output><br><br>";
+  h += "<button type='submit'>Save Options</button></form>";
+  h += "<p>Settings are saved on the ESP32 and retained after restart.</p></div>";
+  h += pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+void saveOptions() {
+  if (server.hasArg("timeout")) {
+    long value = server.arg("timeout").toInt();
+    if (value >= 1000 && value <= 10000 && value % 1000 == 0) {
+      reasonTimeoutMs = (unsigned long)value;
+    }
+  }
+  if (server.hasArg("brightness")) {
+    int value = server.arg("brightness").toInt();
+    if (value >= 0 && value <= 255) ledBrightness = (uint8_t)value;
+  }
+
+  settingsPrefs.begin("classscan", false);
+  settingsPrefs.putULong("timeout", reasonTimeoutMs);
+  settingsPrefs.putUChar("brightness", ledBrightness);
+  settingsPrefs.end();
+
+  ledStrip.setBrightness(ledBrightness);
+  updateLedStrip();
+  String h = pageStart("Device Options Saved");
+  h += "<div class='card'><h2>Options Saved</h2>";
+  h += "<p>Reason timeout: " + String(reasonTimeoutMs / 1000) + " seconds</p>";
+  h += "<p>LED brightness: " + String(ledBrightness) + " / 255</p>";
+  h += "<p><a href='/options'>Back to Device Options</a></p></div>" + pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// ERASE ALL STUDENT ENTRIES (keeps attendance logs intact)
+// ======================================================
+
+void showClearStudents() {
+  String h = pageStart("Erase Student List");
+  h += "<div class='card'><h2>Erase Student List</h2>";
+  h += "<p>This permanently removes the student CSV from the ESP32 and clears the loaded student list. Attendance logs are kept.</p>";
+  h += "<form method='POST' action='/clearstudents' onsubmit=\"return confirm('Erase every student entry from this device? Attendance logs will be kept.');\">";
+  h += "<button type='submit'>Erase All Student Entries</button></form></div>" + pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+void doClearStudents() {
+  if (SPIFFS.exists("/students.csv")) SPIFFS.remove("/students.csv");
+  if (SPIFFS.exists("/students.tmp")) SPIFFS.remove("/students.tmp");
+  studentCount = 0;
+  pendingOutStudentIndex = -1;
+  selectedReason = -1;
+  reasonSelectionDeadline = 0;
+  reasonMenuVisible = false;
+  for (int i = 0; i < LED_COUNT; i++) ledStudentIndex[i] = -1;
+  ledStrip.clear();
+  ledStrip.show();
+  lastScan = "Student list erased";
+  lastTime = getTimestamp();
+  updateOledDisplay(true);
+  String h = pageStart("Student List Erased");
+  h += "<div class='card'><h2>Student List Erased</h2><p>All student entries have been removed from the device. Attendance logs were not deleted.</p>";
+  h += "<p><a href='/upload'>Upload a new student CSV</a></p></div>" + pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// ATTENDANCE REPORTS MENU
+// ======================================================
+
+void showAttendanceReports() {
+  String h = pageStart("Attendance Reports");
+
+  h += "<div class='card'><h2>Attendance Reports</h2>";
+  h += "<p>Download attendance records or clear the saved attendance history.</p>";
+  h += "<p><a href='/logs'>Download Logs (CSV)</a></p>";
+  h += "<p><a href='/report'>Download Attendance Report (CSV)</a></p>";
+  h += "<p><a href='/clearlogs'>Clear Logs</a></p>";
+  h += "</div>";
+
+  h += pageEnd();
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// CLEAR LOGS
+// ======================================================
+
+void showClearLogs() {
+  String h = pageStart("Clear Logs");
+
+  h += "<div class='card'><h2>Clear Attendance Logs</h2>";
+  h += "<p>This deletes saved scan history and marks everyone IN.</p>";
+  h += "<form method='POST' action='/clearlogs' ";
+  h += "onsubmit=\"return confirm('Delete all attendance logs?');\">";
+  h += "<button type='submit'>Confirm Clear Logs</button>";
+  h += "</form></div>" + pageEnd();
+
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+void doClearLogs() {
+  if (SPIFFS.exists("/logs.csv")) SPIFFS.remove("/logs.csv");
+  initLogs();
+
+  for (int i = 0; i < studentCount; i++) {
+    students[i].out = false;
+    students[i].outTime = "";
+    students[i].outReason = "";
+  }
+
+  lastScan = "Logs cleared";
+  lastTime = getTimestamp();
+
+  updateOledDisplay(true);
+  updateLedStrip();
+
+  String h = pageStart("Logs Cleared");
+  h += "<div class='card'><h2>Logs Cleared</h2>";
+  h += "<p>All students have been marked IN.</p>";
+  h += "<p><a href='/'>Return to Dashboard</a></p></div>";
+  h += pageEnd();
+
+  server.send(200, "text/html; charset=utf-8", h);
+}
+
+// ======================================================
+// SETUP
+// ======================================================
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  for (int led = 0; led < LED_COUNT; led++) {
+    ledStudentIndex[led] = -1;
+  }
+
+  ledStrip.begin();
+  settingsPrefs.begin("classscan", true);
+  reasonTimeoutMs = settingsPrefs.getULong("timeout", 3000);
+  if (reasonTimeoutMs < 1000 || reasonTimeoutMs > 10000) reasonTimeoutMs = 3000;
+  ledBrightness = settingsPrefs.getUChar("brightness", 50);
+  settingsPrefs.end();
+
+  ledStrip.setBrightness(ledBrightness);
+  ledStrip.clear();
+  ledStrip.show();
+
+  Wire.begin(21, 22);
+
+  if (oled.begin(0x3C, true)) {
+    oledReady = true;
+    oled.clearDisplay();
+    oled.setTextColor(SH110X_WHITE);
+    oled.setTextSize(1);
+    oled.setCursor(0, 0);
+    oled.println("Class Scanner");
+    oled.println("Starting...");
+    oled.display();
+
+    Serial.println("SH1106 OLED ready at 0x3C");
+  } else {
+    Serial.println("SH1106 OLED not found at 0x3C");
+  }
+
+  scanner.begin(9600, SERIAL_8N1, 16, 17);
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS mount failed");
+    return;
+  }
+
+  initLogs();
+  loadStudents();
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(AP_SSID, AP_PASS);
+
+  Serial.print("AP IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  WiFi.begin(SCHOOL_SSID, SCHOOL_PASS);
+
+  Serial.println("Connecting to school WiFi...");
+  unsigned long started = millis();
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - started < 15000) {
+    delay(250);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("School WiFi IP: ");
+    Serial.println(WiFi.localIP());
+
+    configTime(-8 * 3600, 3600,
+               "pool.ntp.org", "time.nist.gov");
+
+    struct tm ti;
+
+    if (getLocalTime(&ti, 10000)) {
+      Serial.println("Time synchronized");
+    } else {
+      Serial.println("NTP not available yet");
+    }
+  } else {
+    Serial.println("School WiFi unavailable; AP is still active");
+  }
+
+  restoreAttendanceState();
+
+  reasonMenuVisible = false;
+  updateOledDisplay(true);
+  lastOledUpdate = millis();
+
+  updateLedStrip();
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/upload", HTTP_GET, showUploadPage);
+  server.on("/students", HTTP_GET, showStudents);
+  server.on("/student-management", HTTP_GET, showStudentManagement);
+  server.on("/attendance-reports", HTTP_GET, showAttendanceReports);
+  server.on("/logs", HTTP_GET, handleLogs);
+  server.on("/report", HTTP_GET, handleReport);
+  server.on("/options", HTTP_GET, showOptions);
+  server.on("/options", HTTP_POST, saveOptions);
+  server.on("/clearstudents", HTTP_GET, showClearStudents);
+  server.on("/clearstudents", HTTP_POST, doClearStudents);
+  server.on("/clearlogs", HTTP_GET, showClearLogs);
+  server.on("/clearlogs", HTTP_POST, doClearLogs);
+
+  server.on(
+    "/upload",
+    HTTP_POST,
+    handleUploadComplete,
+    handleUploadData
+  );
+
+  server.begin();
+
+  Serial.println("Web server ready");
+  Serial.println("Open http://192.168.4.1/");
+}
+
+// ======================================================
+// MAIN LOOP
+// ======================================================
+
+void loop() {
+  server.handleClient();
+  handleReasonButton();
+  updateOledDisplay();
+
+  static unsigned long lastLedUpdate = 0;
+
+  if (millis() - lastLedUpdate >= 100) {
+    lastLedUpdate = millis();
+    updateLedStrip();
+  }
+
+  if (scanner.available()) {
+    String code = scanner.readStringUntil('\n');
+    code.trim();
+    if (code.length() == 0) return;
+
+    // Do not accept another scan while a student is choosing a reason.
+    if (pendingOutStudentIndex >= 0) {
+      Serial.println("Choose a reason and hold the button to confirm first.");
+      return;
+    }
+
+    Student* s = findStudent(code);
+    if (!s) {
+      lastScan = "Unknown Student: " + code;
+      lastTime = getTimestamp();
+      Serial.println(lastScan);
+      scanMessage = "Unknown student";
+      scanMessageUntil = millis() + SCAN_MESSAGE_MS;
+      updateOledDisplay(true);
+      return;
+    }
+
+    if (!s->out) {
+      // Student is leaving: ask for a reason before recording the OUT event.
+      pendingOutStudentIndex = (int)(s - students);
+      selectedReason = -1;  // No choice until the button is tapped.
+      reasonSelectionDeadline = 0;
+      scanMessageUntil = 0;
+      reasonMenuVisible = true;
+      showReasonMenu();
+      lastOledUpdate = millis();
+      Serial.print("Reason required for: ");
+      Serial.println(s->first + " " + s->last);
+      return;
+    }
+
+    // Student is returning IN; no reason prompt is needed.
+    String timestamp = getTimestamp();
+    s->out = false;
+    String reasonForLog = s->outReason;
+    s->outTime = "";
+    logEvent(s, "IN", timestamp, reasonForLog);
+
+    lastScan = s->first + " " + s->last + " (IN)";
+    lastTime = timestamp;
+    Serial.println(lastScan);
+
+    scanMessage = s->first + " " + s->last + " IN";
+    scanMessageUntil = millis() + SCAN_MESSAGE_MS;
+    reasonMenuVisible = false;
+    updateOledDisplay(true);
+    updateLedStrip();
+  }
+}

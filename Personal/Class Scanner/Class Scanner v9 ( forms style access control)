@@ -105,6 +105,7 @@ bool requireGuiAuth() {
 
 const int MAX_STUDENTS = 500;
 
+// Student record type kept in this single .ino file.
 struct Student {
   String id;
   String first;
@@ -114,6 +115,11 @@ struct Student {
   String outTime;
   String outReason;
 };
+
+// Explicit declarations prevent Arduino's auto-prototype generator from
+// placing Student-pointer prototypes before the Student definition.
+Student* findStudent(String id);
+void logEvent(Student* s, String action, String timestamp, String reason);
 
 Student students[MAX_STUDENTS];
 int studentCount = 0;
@@ -1816,7 +1822,7 @@ void setup() {
 
   server.on("/upload", HTTP_POST,
     [](){ if (requireGuiAuth()) handleUploadComplete(); },
-    [](HTTPUpload &upload){ if (requireGuiAuth()) handleUploadData(); }
+    [](){ if (requireGuiAuth()) handleUploadData(); }
   );
 
   server.begin();
